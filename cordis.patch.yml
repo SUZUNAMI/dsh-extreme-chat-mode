@@ -1,0 +1,51 @@
+# 极限 Chat 模式：零注入的 Agent 预设。
+#
+# 目标是让模型每一次请求里只有两样东西——用户输入、模型自己的输出。
+# 四类上下文来源逐一关掉：
+#
+#   1. 系统提示词 —— persona 用空 prefix + complete: true，
+#      complete 段会成为唯一 system 段，把 harness identity、工具指导、
+#      HARNESS_SOURCE、WEB_SURFACE 等所有其他段一起顶掉。
+#   2. runtime context —— includeRuntimeContext: false 走
+#      systemPrompt.suppressRuntimeContext()，压掉全部可选槽位。
+#   3. AGENTS.md —— 不挂 agent-instructions。
+#   4. 技能目录 —— 不挂 tool-skill / skill-filesystem。
+#
+# 剩下两处需要额外处理，都由 extreme-chat-no-tools 负责：
+#
+#   * 工具 —— 在 agent 作用域内 restrict 掉所有继承来的全局工具
+#     （allow: []）。本预设不注册任何工具，所以模型拿到的工具列表为空。
+#   * working-directory:current —— runtime context 里唯一标了
+#     required: true 的一条，suppressRuntimeContext 压不掉；在同一个作用域
+#     注册同名空条目遮蔽它（ScopedLayers.merge 让最近作用域胜出）。
+#
+# 唯一保留的是上下文压缩：长对话不会因为超窗口直接失败。压缩只会在快满时
+# 往会话里追加一段摘要，不影响正常轮次。
+- insert:
+    - id: preset-extreme-chat
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: extreme-chat
+        name: Extreme Chat
+        description: 极限模式：零系统提示词、零工具、不加载 AGENTS.md 和技能目录，模型只看到你的输入和自己的输出。
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              # 空前缀 + complete：唯一的 system 段，且内容为空。
+              prefix: ''
+              complete: true
+              includeRuntimeContext: false
+          - id: extreme-chat-no-tools
+            name: dsh-extreme-chat-mode
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
